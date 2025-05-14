@@ -21,6 +21,10 @@ const contentTypeTextHtml = "text/html"
 const contentTypeTextPlain = "text/plain"
 const contentTypeOctetStream = "application/octet-stream"
 
+type header interface {
+	Get(string) string
+}
+
 // Parse an email message read from io.Reader into parsemail.Email struct
 func Parse(r io.Reader) (email Email, err error) {
 	msg, err := mail.ReadMessage(r)
@@ -131,10 +135,10 @@ func parseContentType(contentTypeHeader string) (contentType string, params map[
 	return mime.ParseMediaType(contentTypeHeader)
 }
 
-func parseAttachmentOnlyEmail(body io.Reader, header mail.Header) (attachments []Attachment, err error) {
+func parseAttachmentOnlyEmail(body io.Reader, header header) (attachments []Attachment, err error) {
 	contentDisposition := header.Get("Content-Disposition")
 
-	if len(contentDisposition) > 0 && strings.Contains(contentDisposition, "attachment;") {
+	if len(contentDisposition) > 0 && strings.Contains(contentDisposition, "attachment") {
 
 		attachmentData, err := decodeContent(body, header.Get("Content-Transfer-Encoding"))
 		if err != nil {
@@ -290,8 +294,8 @@ func parseMultipartAlternative(msg io.Reader, boundary string) (textBody, htmlBo
 	return textBody, htmlBody, embeddedFiles, err
 }
 
-func parseMultipartMixed(msg io.Reader, boundary string) (textBody, htmlBody string, attachments []Attachment, embeddedFiles []EmbeddedFile, err error) {
-	mr := multipart.NewReader(msg, boundary)
+func parseMultipartMixed(body io.Reader, boundary string) (textBody, htmlBody string, attachments []Attachment, embeddedFiles []EmbeddedFile, err error) {
+	mr := multipart.NewReader(body, boundary)
 	for {
 		part, err := mr.NextRawPart()
 		if err == io.EOF {
@@ -357,6 +361,8 @@ func parseMultipartMixed(msg io.Reader, boundary string) (textBody, htmlBody str
 			}
 
 			htmlBody += strings.TrimSuffix(string(ppContent[:]), "\n")
+		} else if contentType == contentTypeOctetStream {
+			attachments, err = parseAttachmentOnlyEmail(part, part.Header)
 		} else {
 			return textBody, htmlBody, attachments, embeddedFiles, fmt.Errorf("Unknown multipart/mixed nested mime type: %s", contentType)
 		}
