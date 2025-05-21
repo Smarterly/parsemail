@@ -136,6 +136,21 @@ func parseContentType(contentTypeHeader string) (contentType string, params map[
 }
 
 func parseAttachmentOnlyEmail(body io.Reader, header header) (attachments []Attachment, err error) {
+	contentHeader := header.Get("Content-Type")
+
+	contentHeaderParts := strings.Split(contentHeader, ";")
+	additionalProperties := make(map[string]string)
+	if len(contentHeaderParts) > 1 {
+		for _, val := range contentHeaderParts[1:] {
+			parts := strings.Split(val, "=")
+			additionalProperties[strings.Trim(parts[0], " ")] = strings.Trim(strings.ReplaceAll(
+				strings.Trim(parts[1], `"`),
+				`\"`,
+				`"`,
+			), " ")
+		}
+	}
+
 	contentDisposition := header.Get("Content-Disposition")
 
 	if len(contentDisposition) > 0 && strings.Contains(contentDisposition, "attachment") {
@@ -149,9 +164,10 @@ func parseAttachmentOnlyEmail(body io.Reader, header header) (attachments []Atta
 		fileName = strings.TrimRight(fileName, "\"")
 
 		at := Attachment{
-			Filename:    fileName,
-			ContentType: "application/octet-stream",
-			Data:        attachmentData,
+			Filename:             fileName,
+			ContentType:          "application/octet-stream",
+			Data:                 attachmentData,
+			AdditionalProperties: additionalProperties,
 		}
 
 		attachments = append(attachments, at)
@@ -316,10 +332,24 @@ func parseMultipartMixed(body io.Reader, boundary string) (textBody, htmlBody st
 
 		cte := part.Header.Get("Content-Transfer-Encoding")
 
+		//contentHeader := part.Header.Get("Content-Type")
 		contentType, params, err := mime.ParseMediaType(part.Header.Get("Content-Type"))
 		if err != nil {
 			return textBody, htmlBody, attachments, embeddedFiles, err
 		}
+
+		//contentHeaderParts := strings.Split(contentHeader, ";")
+		//additionalAttributes := make(map[string]string)
+		//if len(contentHeaderParts) > 1 {
+		//	for _, val := range contentHeaderParts[1:] {
+		//		parts := strings.Split(val, "=")
+		//		additionalAttributes[parts[0]] = strings.ReplaceAll(
+		//			strings.Trim(parts[1], `"`),
+		//			`\"`,
+		//			`"`,
+		//		)
+		//	}
+		//}
 
 		if isAttachment(part) {
 			at, err := decodeAttachment(part)
@@ -554,9 +584,10 @@ func (hp headerParser) parseMessageIdList(s string) (result []string) {
 
 // Attachment with filename, content type and data (as a io.Reader)
 type Attachment struct {
-	Filename    string
-	ContentType string
-	Data        io.Reader
+	Filename             string
+	ContentType          string
+	Data                 io.Reader
+	AdditionalProperties map[string]string
 }
 
 // EmbeddedFile with content id, content type and data (as a io.Reader)
